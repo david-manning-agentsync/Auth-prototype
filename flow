@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Auth Flow Prototype</title>
+  <style>
+    body { font-family: system-ui, -apple-system, sans-serif; background:#f6f7f9; margin:0; }
+    .container { max-width:440px; margin:40px auto; background:#fff; padding:24px; border-radius:10px; box-shadow:0 4px 12px rgba(0,0,0,.08); position:relative; }
+    h1 { font-size:20px; margin:0 0 10px; }
+    p { font-size:14px; color:#555; margin:0 0 12px; line-height:1.35; }
+    label { font-size:13px; color:#333; display:block; margin:12px 0 6px; }
+    input[type="text"], input[type="password"], select {
+      width:100%; padding:10px; margin:0 0 8px; font-size:14px;
+      border:1px solid #ddd; border-radius:8px;
+    }
+    button {
+      width:100%; padding:10px; margin-top:12px; font-size:14px; cursor:pointer;
+      border:1px solid #ddd; border-radius:8px; background:#111; color:#fff;
+    }
+    button:disabled { opacity:.5; cursor:not-allowed; }
+    .secondary { background:none; border:none; color:#0066cc; margin-top:8px; width:auto; padding:0; text-align:left; }
+    .hidden { display:none; }
+
+    .demo-reset {
+      position:absolute;
+      top:10px;
+      right:10px;
+      font-size:12px;
+      padding:6px 10px;
+      border-radius:999px;
+      border:1px solid #ddd;
+      background:#fff;
+      color:#333;
+      cursor:pointer;
+      width:auto;
+      margin:0;
+    }
+
+    .list { border:1px solid #eee; border-radius:10px; padding:10px; background:#fafafa; }
+    .row { display:flex; align-items:flex-start; gap:10px; padding:8px 6px; border-radius:8px; }
+    .row:hover { background:#f2f3f7; }
+    .row input { margin-top:3px; }
+    .meta { font-size:12px; color:#666; }
+    .pill { display:inline-block; font-size:11px; padding:2px 6px; border-radius:999px; border:1px solid #ddd; color:#333; margin-left:6px; background:#fff; }
+
+    .tag { display:inline-block; padding:2px 6px; background:#eef; border-radius:6px; font-size:12px; margin-right:6px; }
+    .fineprint { font-size:12px; color:#666; margin-top:8px; }
+    .error { font-size:12px; color:#b00020; margin-top:6px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <button class="demo-reset" onclick="resetToChooser()" aria-label="Demo reset">Reset (demo)</button>
+
+    <!-- DEMO: EMAIL/USERNAME CHOOSER -->
+    <div id="chooser">
+      <h1>Demo setup</h1>
+      <p>Select one or more emails to simulate different producer login states. Then continue to the sign-in flow. <br></br><br>NOTE: emails will be displayed in a dropdown for ease of demo only.</br></p>
+      <div class="list" id="emailList"></div>
+      <button id="startBtn" onclick="startFlow()" disabled>Continue to sign in</button>
+      <p class="fineprint">This is a front-end-only prototype to illustrate flow and language.</p>
+    </div>
+
+    <!-- SIGN IN: EMAIL-FIRST (dropdown of selected emails) -->
+    <div id="email" class="hidden">
+      <h1>Sign in</h1>
+      <p>Choose an email and we’ll route you to the right sign-in method.</p>
+      <p id="securityBanner" class="fineprint" style="margin-top:-2px;"></p>
+
+      <label for="emailSelect">Email</label>
+      <select id="emailSelect"></select>
+
+      <button id="continueBtn" onclick="continueFromEmail()" disabled>Continue</button>
+      <button class="secondary" onclick="resetToChooser()">Change demo selection</button>
+    </div>
+
+    <!-- PASSWORD -->
+    <div id="password" class="hidden">
+      <h1>Sign in</h1>
+      <label for="pwEmail">Email</label>
+      <input id="pwEmail" type="text" />
+
+      <label for="pw">Password</label>
+      <input id="pw" type="password" placeholder="Password" />
+
+      <button onclick="continueFromPassword()">Sign in</button>
+      <button class="secondary" onclick="show('email')">Use a different email</button>
+    </div>
+
+    <!-- 2FA -->
+    <div id="twofa" class="hidden">
+      <h1>Two-factor verification</h1>
+      <p>Two-factor authentication is required to access one or more organizations you work with.</p>
+      <label for="code">Verification code</label>
+      <input id="code" type="text" placeholder="Enter code" />
+      <button onclick="verify2fa()">Verify</button>
+    </div>
+
+    <!-- SSO REQUIRED (interstitial shown only when user picked a non-SSO email) -->
+    <div id="sso" class="hidden">
+      <h1>Single sign-on required</h1>
+      <p>To continue, please sign in using single sign-on (SSO). One or more organizations you work with require SSO.</p>
+      <button onclick="show('ssoEmail')">Continue</button>
+      <button class="secondary" onclick="show('email')">Use a different email</button>
+    </div>
+
+    <!-- SSO EMAIL SELECT -->
+    <div id="ssoEmail" class="hidden">
+      <h1>Continue with work email</h1>
+      <p>Select the email associated with single sign-on. This must be a work email.</p>
+
+      <label for="ssoEmailSelect">Email</label>
+      <select id="ssoEmailSelect"></select>
+      <div id="ssoEmailError" class="error" style="display:none;"></div>
+
+      <button id="ssoContinueBtn" onclick="beginSso()" disabled>Continue with single sign-on</button>
+      <button class="secondary" onclick="show('email')">Use a different email</button>
+    </div>
+
+    <!-- REDIRECT -->
+    <div id="redirect" class="hidden">
+      <h1>Signing you in…</h1>
+      <p>Redirecting you to your organization to sign in.</p>
+    </div>
+
+    <!-- SUCCESS -->
+    <div id="success" class="hidden">
+      <h1>Welcome back</h1>
+      <p>You’re signed in.</p>
+      <div id="successTags" style="margin-top:8px;"></div>
+      <button class="secondary" onclick="resetToChooser()">Start a new demo</button>
+    </div>
+  </div>
+
+  <script>
+    // --- Demo data: 6 emails (2 password, 2 2FA, 2 SSO) ---
+    const EMAILS = [
+      { email: 'alex.horne@personal.com',        type: 'password', label: 'Password login' },
+      { email: 'greg.davies@personal.com',      type: 'password', label: 'Password login' },
+      { email: 'ed.gamble@twofactor.com',       type: '2fa',      label: 'Password + 2FA' },
+      { email: 'kerry.godliman@twofactor.com',  type: '2fa',      label: 'Password + 2FA' },
+      { email: 'james.acaster@sso.com',         type: 'sso',      label: 'SSO (SAML)' },
+      { email: 'jessica.knappett@sso.com',      type: 'sso',      label: 'SSO (SAML)' },
+    ];
+
+    // State
+    let selectedEmails = [];
+    let currentEmail = null;
+    // computed from selected emails (highest-security wins): password | 2fa | sso
+    let requiredAuth = 'password';
+
+    // DOM refs
+    const emailList = document.getElementById('emailList');
+    const startBtn  = document.getElementById('startBtn');
+
+    // ----------------------------
+    // Rendering helpers
+    // ----------------------------
+
+    function renderChooser() {
+      emailList.innerHTML = '';
+
+      const groups = [
+        { title: 'Password', key: 'password' },
+        { title: 'Password + 2FA', key: '2fa' },
+        { title: 'SSO (SAML)', key: 'sso' },
+      ];
+
+      groups.forEach(g => {
+        const header = document.createElement('div');
+        header.style.fontSize = '12px';
+        header.style.color = '#666';
+        header.style.padding = '6px 6px 2px';
+        header.textContent = g.title;
+        emailList.appendChild(header);
+
+        EMAILS.filter(e => e.type === g.key).forEach(e => {
+          const row = document.createElement('label');
+          row.className = 'row';
+
+          const cb = document.createElement('input');
+          cb.type = 'checkbox';
+          cb.checked = selectedEmails.includes(e.email);
+          cb.addEventListener('change', () => {
+            if (cb.checked) {
+              if (!selectedEmails.includes(e.email)) selectedEmails.push(e.email);
+            } else {
+              selectedEmails = selectedEmails.filter(x => x !== e.email);
+            }
+            updateStartBtn();
+          });
+
+          const textWrap = document.createElement('div');
+
+          const main = document.createElement('div');
+          main.textContent = e.email;
+          const pill = document.createElement('span');
+          pill.className = 'pill';
+          pill.textContent = e.label;
+          main.appendChild(pill);
+
+          const sub = document.createElement('div');
+          sub.className = 'meta';
+          sub.textContent = 'Demo login identity';
+
+          textWrap.appendChild(main);
+          textWrap.appendChild(sub);
+
+          row.appendChild(cb);
+          row.appendChild(textWrap);
+          emailList.appendChild(row);
+        });
+      });
+
+      updateStartBtn();
+    }
+
+    function updateStartBtn() {
+      startBtn.disabled = selectedEmails.length === 0;
+    }
+
+    function show(id) {
+      document.querySelectorAll('.container > div').forEach(el => el.classList.add('hidden'));
+      document.getElementById(id).classList.remove('hidden');
+    }
+
+    // ----------------------------
+    // Core logic
+    // ----------------------------
+
+    function computeRequiredAuth(emails) {
+      const selectedEntries = EMAILS.filter(e => emails.includes(e.email));
+      const hasSSO = selectedEntries.some(e => e.type === 'sso');
+      const has2FA = selectedEntries.some(e => e.type === '2fa');
+      return hasSSO ? 'sso' : (has2FA ? '2fa' : 'password');
+    }
+
+    function updateSecurityBanner() {
+      const banner = document.getElementById('securityBanner');
+      if (requiredAuth === 'sso') {
+        banner.textContent = 'Single sign-on is required based on one or more organizations you work with.';
+      } else if (requiredAuth === '2fa') {
+        banner.textContent = 'Two-factor authentication is required based on one or more organizations you work with.';
+      } else {
+        banner.textContent = '';
+      }
+    }
+
+    function populateEmailDropdowns() {
+      const addBlank = (selectEl, placeholder) => {
+        const blank = document.createElement('option');
+        blank.value = '';
+        blank.textContent = placeholder;
+        blank.disabled = true;
+        blank.selected = true;
+        selectEl.appendChild(blank);
+      };
+
+      // Main sign-in dropdown
+      const sel = document.getElementById('emailSelect');
+      sel.innerHTML = '';
+      addBlank(sel, 'Select an email…');
+      selectedEmails.forEach(em => {
+        const opt = document.createElement('option');
+        opt.value = em;
+        opt.textContent = em;
+        sel.appendChild(opt);
+      });
+
+      // SSO dropdown includes ALL selected emails (but non-SSO are disabled + labeled)
+      const ssoSel = document.getElementById('ssoEmailSelect');
+      ssoSel.innerHTML = '';
+      addBlank(ssoSel, 'Select your work email…');
+
+      selectedEmails.forEach(em => {
+        const entry = EMAILS.find(x => x.email === em);
+        const opt = document.createElement('option');
+        opt.value = em;
+        opt.textContent = entry?.type === 'sso' ? em : `${em} (not SSO)`;
+        if (entry?.type !== 'sso') opt.disabled = true;
+        ssoSel.appendChild(opt);
+      });
+
+      currentEmail = null;
+    }
+
+    function wireUpSelectionGates() {
+      // Email screen
+      const sel = document.getElementById('emailSelect');
+      const btn = document.getElementById('continueBtn');
+      btn.disabled = true;
+      sel.onchange = () => {
+        btn.disabled = !sel.value;
+      };
+
+      // SSO email screen
+      const ssoSel = document.getElementById('ssoEmailSelect');
+      const ssoBtn = document.getElementById('ssoContinueBtn');
+      const err = document.getElementById('ssoEmailError');
+      ssoBtn.disabled = true;
+      err.style.display = 'none';
+
+      ssoSel.onchange = () => {
+        err.style.display = 'none';
+        ssoBtn.disabled = !ssoSel.value;
+      };
+    }
+
+    // ----------------------------
+    // Routing helper
+    // ----------------------------
+
+    // Determines which screen to show next after selecting an email.
+    // requiredAuth: password | 2fa | sso
+    // chosenType: password | 2fa | sso
+    // Returns: 'password' | 'sso' | 'beginSsoNow'
+    function decideNextScreen(requiredAuthMode, chosenType) {
+      if (requiredAuthMode === 'sso') {
+        // If user selected an SSO email, don't make them re-select it.
+        if (chosenType === 'sso') return 'beginSsoNow';
+        // Otherwise explain SSO requirement, then they will choose a work email.
+        return 'sso';
+      }
+
+      // Non-SSO modes always go through password first.
+      return 'password';
+    }
+
+    // ----------------------------
+    // Flow actions
+    // ----------------------------
+
+    function startFlow() {
+      requiredAuth = computeRequiredAuth(selectedEmails);
+      populateEmailDropdowns();
+      updateSecurityBanner();
+      wireUpSelectionGates();
+      show('email');
+    }
+
+    function continueFromEmail() {
+      const sel = document.getElementById('emailSelect');
+      currentEmail = sel.value || null;
+      if (!currentEmail) return;
+
+      const chosenEntry = EMAILS.find(e => e.email === currentEmail);
+      const chosenType = chosenEntry?.type || 'password';
+
+      const next = decideNextScreen(requiredAuth, chosenType);
+
+      if (next === 'beginSsoNow') {
+        // User picked an SSO email and SSO is required — go straight into the SSO redirect flow.
+        const ssoSel = document.getElementById('ssoEmailSelect');
+        if (ssoSel) ssoSel.value = currentEmail;
+        beginSso();
+        return;
+      }
+
+      if (next === 'sso') {
+        show('sso');
+        return;
+      }
+
+      if (next === 'password') {
+        document.getElementById('pwEmail').value = currentEmail;
+        document.getElementById('pw').value = '';
+        show('password');
+        return;
+      }
+
+      // Fallback
+      show('email');
+    }
+
+    function continueFromPassword() {
+      if (requiredAuth === '2fa') {
+        document.getElementById('code').value = '';
+        show('twofa');
+        return;
+      }
+
+      showSuccess({ show2faTag: false, showSsoTag: false });
+    }
+
+    function verify2fa() {
+      showSuccess({ show2faTag: true, showSsoTag: false });
+    }
+
+    function beginSso() {
+      const ssoSel = document.getElementById('ssoEmailSelect');
+      const err = document.getElementById('ssoEmailError');
+
+      currentEmail = (ssoSel && ssoSel.value) ? ssoSel.value : null;
+      if (!currentEmail) return;
+
+      const entry = EMAILS.find(e => e.email === currentEmail);
+      if (!entry || entry.type !== 'sso') {
+        err.textContent = 'Please select a work email that supports single sign-on.';
+        err.style.display = 'block';
+        return;
+      }
+
+      show('redirect');
+      setTimeout(() => {
+        showSuccess({ show2faTag: false, showSsoTag: true });
+      }, 900);
+    }
+
+    function showSuccess({ show2faTag, showSsoTag }) {
+      const tags = document.getElementById('successTags');
+      tags.innerHTML = '';
+
+      if (showSsoTag) {
+        const t = document.createElement('span');
+        t.className = 'tag';
+        t.textContent = 'SSO';
+        tags.appendChild(t);
+      }
+
+      if (show2faTag) {
+        const t = document.createElement('span');
+        t.className = 'tag';
+        t.textContent = '2FA enabled';
+        tags.appendChild(t);
+      }
+
+      if (!showSsoTag && !show2faTag) {
+        const t = document.createElement('span');
+        t.className = 'tag';
+        t.textContent = 'Password login';
+        tags.appendChild(t);
+      }
+
+      show('success');
+    }
+
+    function resetToChooser() {
+      selectedEmails = [];
+      currentEmail = null;
+      requiredAuth = 'password';
+      renderChooser();
+      show('chooser');
+    }
+
+    // ----------------------------
+    // Lightweight "tests" (console assertions)
+    // ----------------------------
+
+    function runTests() {
+      console.assert(EMAILS.length === 6, 'Test 0 failed: expected exactly 6 demo emails');
+
+      console.assert(computeRequiredAuth(['alex.horne@personal.com']) === 'password', 'Test 1 failed: password-only selection should require password');
+      console.assert(computeRequiredAuth(['ed.gamble@twofactor.com']) === '2fa', 'Test 2 failed: 2FA selection should require 2fa');
+      console.assert(computeRequiredAuth(['james.acaster@sso.com']) === 'sso', 'Test 3 failed: SSO selection should require sso');
+
+      console.assert(computeRequiredAuth(['alex.horne@personal.com', 'ed.gamble@twofactor.com']) === '2fa', 'Test 4 failed: 2FA should override password');
+      console.assert(computeRequiredAuth(['ed.gamble@twofactor.com', 'james.acaster@sso.com']) === 'sso', 'Test 5 failed: SSO should override 2FA');
+      console.assert(computeRequiredAuth(['alex.horne@personal.com', 'james.acaster@sso.com']) === 'sso', 'Test 6 failed: SSO should override password');
+
+      console.assert(computeRequiredAuth([]) === 'password', 'Test 7 failed: empty selection should default to password');
+
+      console.assert(EMAILS.find(e => e.email === 'james.acaster@sso.com')?.type === 'sso', 'Test 8 failed: expected james.acaster@sso.com to be SSO');
+      console.assert(EMAILS.find(e => e.email === 'alex.horne@personal.com')?.type !== 'sso', 'Test 9 failed: expected alex.horne@personal.com to NOT be SSO');
+
+      // Placeholder option pattern is valid
+      const blank = document.createElement('option');
+      blank.value = '';
+      blank.disabled = true;
+      blank.selected = true;
+      console.assert(blank.value === '' && blank.disabled === true && blank.selected === true, 'Test 10 failed: expected blank placeholder option to be disabled+selected');
+
+      // New routing tests
+      console.assert(decideNextScreen('sso', 'sso') === 'beginSsoNow', 'Test 11 failed: when SSO required and SSO email chosen, should bypass interstitial + work-email screen');
+      console.assert(decideNextScreen('sso', 'password') === 'sso', 'Test 12 failed: when SSO required and non-SSO email chosen, should show SSO required interstitial');
+      console.assert(decideNextScreen('2fa', 'password') === 'password', 'Test 13 failed: non-SSO modes should route to password screen first');
+    }
+
+    // Init
+    runTests();
+    renderChooser();
+  </script>
+</body>
+</html>
